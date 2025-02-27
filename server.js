@@ -1,11 +1,13 @@
 require("dotenv").config();
 const express = require("express");
-const axios = require("axios");
+const OpenAI = require("openai");
 
 const app = express();
 app.use(express.json());
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // Ensure API key is securely loaded from .env
+});
 
 // Handle incoming messages from Google Chat
 app.post("/", async (req, res) => {
@@ -13,21 +15,13 @@ app.post("/", async (req, res) => {
   console.log("Received message:", message);
 
   try {
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-4",
-        messages: [{ role: "user", content: message }],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      store: true,
+      messages: [{ role: "user", content: message }],
+    });
 
-    const reply = response.data.choices[0].message.content;
+    const reply = response.choices[0].message.content;
     console.log("Replying:", reply);
 
     res.json({ text: reply });

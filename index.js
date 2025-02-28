@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // Load API key from .env
+  apiKey: process.env.OPENAI_API_KEY, // Ensure API key is loaded from .env
 });
 
 // Temporary storage for extracted PDF content
@@ -18,46 +18,65 @@ let extractedText = "";
 
 // Handle incoming messages from Google Chat
 app.post("/", async (req, res) => {
+  console.log("Received request:", JSON.stringify(req.body, null, 2));
+
   const message = req.body.message?.text || "";
   const attachment = req.body.message?.attachment || null;
 
   console.log("Received message:", message);
 
+  // Handle PDF attachment
   if (attachment) {
     try {
-      const fileUrl = attachment.downloadUri; // URL to download the file
-      const fileName = path.join(__dirname, "temp.pdf");
+      console.log("Attachment detected:", attachment);
 
-      // Download the PDF file
-      const response = await axios.get(fileUrl, {
+      const fileUrl = attachment.downloadUri;
+      if (!fileUrl) {
+        return res.json({ text: "Attachment URL missing." });
+      }
+
+      console.log("Downloading PDF from:", fileUrl);
+
+      // Download the PDF
+      const fileResponse = await axios({
+        url: fileUrl,
+        method: "GET",
         responseType: "arraybuffer",
       });
-      fs.writeFileSync(fileName, response.data);
+
+      const filePath = path.join(__dirname, "temp.pdf");
+      fs.writeFileSync(filePath, Buffer.from(fileResponse.data));
+
+      console.log("PDF downloaded, extracting text...");
 
       // Extract text from the PDF
-      const pdfData = await pdf(fs.readFileSync(fileName));
+      const pdfData = await pdf(fs.readFileSync(filePath));
       extractedText = pdfData.text || "No readable content found in the PDF.";
 
-      // Cleanup: Remove the temp file
-      fs.unlinkSync(fileName);
+      // Cleanup temp file
+      fs.unlinkSync(filePath);
+      console.log("PDF processed successfully.");
 
       res.json({
         text: "PDF processed successfully. Ask me questions about it!",
       });
       return;
     } catch (error) {
-      console.error("Error processing attachment:", error);
-      res.json({ text: "Failed to process the PDF file." });
+      console.error("Error processing attachment:", error.message);
+      res.json({ text: `Failed to process the PDF file: ${error.message}` });
       return;
     }
   }
 
+  // Handle text messages
   if (!message) {
     res.json({ text: "Send me a message or attach a PDF file." });
     return;
   }
 
   try {
+    console.log("Generating AI response...");
+
     // Use extracted PDF content as context for OpenAI
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -77,7 +96,7 @@ app.post("/", async (req, res) => {
 
     res.json({ text: reply });
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error:", error.message);
     res.json({ text: "Error processing request." });
   }
 });
